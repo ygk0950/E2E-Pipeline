@@ -6,7 +6,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.getenv("DB_PATH", "etl_runs.db")
+DB_PATH = os.getenv("DB_PATH", "data/etl_runs.db")
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS pipeline_runs (
