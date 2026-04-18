@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  etl-app:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./etl_runs.db:/app/etl_runs.db
+    restart: unless-stopped
