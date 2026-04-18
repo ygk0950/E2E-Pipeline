@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone
 
 import boto3
+from botocore.exceptions import ClientError
 import pandas as pd
 import requests
 
@@ -57,16 +58,27 @@ class WeatherPipeline(BasePipeline):
         return df
 
     def load(self, df: pd.DataFrame) -> str:
-        """Write DataFrame as Parquet to S3 and return the s3_key."""
+        """Write DataFrame as Parquet to S3 and return the s3_key. Skips if file already exists."""
         bucket = os.environ["S3_BUCKET"]
-        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        # Key is hour-level so each run within the same hour is deduplicated
+        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H")
         s3_key = f"weather/{timestamp}/data.parquet"
+
+        s3 = boto3.client("s3")
+
+        # Check if file already exists — 404 means it doesn't, anything else is a real error
+        try:
+            s3.head_object(Bucket=bucket, Key=s3_key)
+            logger.info("File already exists at s3://%s/%s — skipping upload", bucket, s3_key)
+            return s3_key
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "404":
+                raise
 
         buffer = io.BytesIO()
         df.to_parquet(buffer, index=False)
         buffer.seek(0)
 
-        s3 = boto3.client("s3")
         s3.put_object(Bucket=bucket, Key=s3_key, Body=buffer.read())
         logger.info("Loaded weather data to s3://%s/%s", bucket, s3_key)
         return s3_key

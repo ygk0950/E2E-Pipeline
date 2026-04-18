@@ -1,6 +1,7 @@
 """Streamlit dashboard for the ETL Pipeline Monitor."""
 
 import time
+from datetime import datetime
 
 import requests
 import streamlit as st
@@ -16,6 +17,8 @@ def fetch(path: str, method: str = "GET") -> dict | list | None:
     try:
         if method == "POST":
             resp = requests.post(url, timeout=10)
+        elif method == "DELETE":
+            resp = requests.delete(url, timeout=30)
         else:
             resp = requests.get(url, timeout=10)
         resp.raise_for_status()
@@ -59,9 +62,16 @@ def page_dashboard() -> None:
                 if result:
                     st.success(result.get("message", "Triggered!"))
 
-    # Auto-refresh every 30 seconds
-    time.sleep(30)
-    st.rerun()
+    # Auto-refresh every 30 seconds without blocking the UI
+    if "last_refresh" not in st.session_state:
+        st.session_state.last_refresh = time.time()
+
+    elapsed = time.time() - st.session_state.last_refresh
+    st.caption(f"Auto-refreshes every 30s — last refresh {int(elapsed)}s ago")
+
+    if elapsed >= 30:
+        st.session_state.last_refresh = time.time()
+        st.rerun()
 
 
 def page_run_history() -> None:
@@ -140,3 +150,16 @@ PAGES = {
 
 page = st.sidebar.radio("Navigation", list(PAGES.keys()))
 PAGES[page]()
+
+# --- S3 management in sidebar ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("S3 Management")
+if st.sidebar.button("Empty S3 Bucket", type="primary"):
+    if st.session_state.get("confirm_clear"):
+        result = fetch("/s3/clear", method="DELETE")
+        if result:
+            st.sidebar.success(result.get("message", "Bucket cleared!"))
+        st.session_state.confirm_clear = False
+    else:
+        st.session_state.confirm_clear = True
+        st.sidebar.warning("Click again to confirm — this will delete ALL S3 data!")

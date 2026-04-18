@@ -1,8 +1,11 @@
 """FastAPI application — exposes pipeline management endpoints."""
 
 import logging
+import os
 from typing import List
 
+import boto3
+from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -100,6 +103,31 @@ def get_pipeline_runs(name: str) -> List[RunResult]:
 
     runs = queries.get_runs(name, limit=20)
     return [RunResult(**r) for r in runs]
+
+
+@app.delete("/s3/clear", tags=["s3"])
+def clear_s3_bucket() -> dict:
+    """Delete all objects in the S3 bucket."""
+    bucket = os.environ.get("S3_BUCKET")
+    if not bucket:
+        raise HTTPException(status_code=500, detail="S3_BUCKET not configured")
+
+    s3 = boto3.client("s3")
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        deleted = 0
+        for page in paginator.paginate(Bucket=bucket):
+            objects = page.get("Contents", [])
+            if objects:
+                s3.delete_objects(
+                    Bucket=bucket,
+                    Delete={"Objects": [{"Key": o["Key"]} for o in objects]},
+                )
+                deleted += len(objects)
+        logger.info("Cleared S3 bucket %s — deleted %d objects", bucket, deleted)
+        return {"message": f"Deleted {deleted} objects from s3://{bucket}"}
+    except ClientError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/pipelines/{name}/logs", tags=["pipelines"])
